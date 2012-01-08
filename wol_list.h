@@ -22,7 +22,8 @@
     calloc(1, size)
 
 #define WOL_FREE(ptr)                                       \
-    free(ptr)
+    if (ptr)                                                \
+        free(ptr)
 
 /* linked list handling macros for the structures above */
 
@@ -61,11 +62,11 @@
     for ((el) = (list); (el) != NULL; (el) = (el)->next)
 
 #define WOL_LIST_REMOVE(list, el)                           \
-    if ((list) == (el))                                     \
+    if ((el) && (list) == (el))                             \
     {                                                       \
-        (list) = NULL;                                      \
+        (list) = (el)->next;                                \
     }                                                       \
-    else                                                    \
+    else if ((list) && (el))                                \
     {                                                       \
         void *_eltmp = (el);                                \
         (el) = (list);                                      \
@@ -74,8 +75,10 @@
             {                                               \
                 (el)->next = (el)->next->next;              \
                 (el) = _eltmp;                              \
+                (el)->next = NULL;                          \
                 break;                                      \
             }                                               \
             (el) = (el)->next;                              \
         } while(el);                                        \
+        (el) = _eltmp;                                      \
     }
