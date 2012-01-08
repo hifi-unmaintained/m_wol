@@ -333,12 +333,14 @@ int wol_join(Cmdoverride *anoverride, aClient *cptr, aClient *sptr, int parc, ch
         dprintf(" parv[%d]: \"%s\"", i, parv[i]);
 
     wol_user    *user       = wol_get_user(cptr);
+    aChannel    *chptr      = find_channel(parv[1], NULL);
+    wol_channel *channel    = wol_get_channel(chptr);
 
     if (user)
     {
+        chptr = get_channel(sptr, parv[1], CREATE);
+
         dprintf(" detected WOL JOIN, returning custom reply");
-        aChannel    *chptr      = get_channel(sptr, parv[1], CREATE);
-        wol_channel *channel    = wol_get_channel(chptr);
 
         /* hack when the module is reloaded and state is lost */
         if (!channel)
@@ -369,14 +371,16 @@ int wol_join(Cmdoverride *anoverride, aClient *cptr, aClient *sptr, int parc, ch
                 {
                     sendto_one(sptr, rpl_str(RPL_TOPIC),
                         me.name, sptr->name, chptr->chname, chptr->topic);
-                    sendto_one(sptr,
-                        rpl_str(RPL_TOPICWHOTIME), me.name,
-                        sptr->name, chptr->chname, chptr->topic_nick,
-                        chptr->topic_time);
                 }
                 wol_names(cptr, sptr, 2, parv);
             }
         }
+        return 0;
+    }
+    else if (channel)
+    {
+        /* deny access from normal IRC users as their clients would only get messed up */
+        sendto_one(sptr, err_str(ERR_BANNEDFROMCHAN), me.name, parv[0], parv[1]);
         return 0;
     }
 
