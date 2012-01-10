@@ -86,12 +86,14 @@ int *m_wol = NULL;
 #define RPL_LISTLOBBY   327
 #define RPL_VERNONREQ   379
 
+#define SKU_RA303       0x00001500
+
 static ModuleInfo *_modinfo;
 
 typedef struct wol_user
 {
     aClient             *p;
-    int                 SKU;
+    unsigned int        SKU;
     struct wol_user*    next;
 } wol_user;
 
@@ -152,6 +154,8 @@ DLLFUNC ModuleHeader MOD_HEADER(m_wol) =
 
 DLLFUNC int MOD_INIT(m_wol)(ModuleInfo *modinfo)
 {
+    sendto_realops("m_wol: Loading...");
+
     CommandAdd(modinfo->handle, MSG_CVERS, TOK_NONE, wol_cvers, MAXPARA, M_UNREGISTERED);
     CommandAdd(modinfo->handle, MSG_APGAR, TOK_NONE, wol_apgar, MAXPARA, M_UNREGISTERED);
     CommandAdd(modinfo->handle, MSG_SERIAL, TOK_NONE, wol_serial, MAXPARA, M_UNREGISTERED);
@@ -187,6 +191,17 @@ DLLFUNC int MOD_LOAD(m_wol)(int module_load)
 
 DLLFUNC int MOD_UNLOAD(m_wol)(int module_unload)
 {
+    wol_user *user;
+
+    sendto_realops("m_wol: Unloading...");
+
+    /* disconnect all WOL users so they don't "ghost" around */
+    WOL_LIST_FOREACH(users, user)
+    {
+        user->p->flags |= FLAGS_KILLED;
+        exit_client(NULL, user->p, &me, "Killed by m_wol");
+    }
+
     WOL_LIST_FREE(channels);
     WOL_LIST_FREE(users);
 
@@ -215,6 +230,12 @@ int wol_cvers(aClient *cptr, aClient *sptr, int parc, char *parv[])
     /* this is the first WOL specific message we get from the client and is used
        to trigger WOL specific behaviour to the client */
 
+    if (parc < 3)
+    {
+        sendto_one(sptr, err_str(ERR_NEEDMOREPARAMS), me.name, parv[0], "CVERS");
+        return 0;
+    }
+
     wol_user *user = wol_get_user(sptr);
 
     if (user == NULL)
@@ -224,7 +245,10 @@ int wol_cvers(aClient *cptr, aClient *sptr, int parc, char *parv[])
         WOL_LIST_INSERT(users, user);
     }
 
-    user->SKU = 1;
+    user->SKU = atoi(parv[2]);
+
+    dprintf(" unk is %08X", atoi(parv[1]));
+    dprintf(" game SKU is %08X", user->SKU);
 
     return 0;
 }
@@ -259,6 +283,11 @@ int wol_verchk(aClient *cptr, aClient *sptr, int parc, char *parv[])
         sendto_one(sptr, err_str(ERR_NEEDMOREPARAMS), me.name, parv[0], "VERCHK");
         return 0;
     }
+
+    dprintf(" API version is %08X", atoi(parv[1]));
+    dprintf(" SKU version is %08X", atoi(parv[2]));
+
+    /* ignore version check, we don't *really* care */
 
     sendto_one(sptr, ":%s %d %s :none none none 1 %s NONREQ",
             me.name,
@@ -460,7 +489,7 @@ int wol_joingame(aClient *cptr, aClient *sptr, int parc, char *parv[])
             channel->tournament,
             0, /* unk */
             0, /* host ipaddr, not used */
-            0, /* unk */
+            channel->flags,
             chptr->chname);
         
         if (MyClient(sptr))
