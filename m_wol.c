@@ -58,6 +58,7 @@ DLLFUNC int wol_verchk(aClient *cptr, aClient *sptr, int parc, char *parv[]);
 DLLFUNC int wol_list(Cmdoverride *anoverride, aClient *cptr, aClient *sptr, int parc, char *parv[]);
 DLLFUNC int wol_join(Cmdoverride *anoverride, aClient *cptr, aClient *sptr, int parc, char *parv[]);
 DLLFUNC int wol_joingame(aClient *cptr, aClient *sptr, int parc, char *parv[]);
+DLLFUNC int wol_userip(aClient *cptr, aClient *sptr, int parc, char *parv[]);
 DLLFUNC int wol_gameopt(aClient *cptr, aClient *sptr, int parc, char *parv[]);
 DLLFUNC int wol_startg(aClient *cptr, aClient *sptr, int parc, char *parv[]);
 
@@ -78,12 +79,14 @@ int *m_wol = NULL;
 #define MSG_VERCHK      "VERCHK"
 #define MSG_LIST        "LIST"
 #define MSG_JOINGAME    "JOINGAME"
+#define MSG_USERIP      "USERIP"
 #define MSG_GAMEOPT     "GAMEOPT"
 #define MSG_STARTG      "STARTG"
 #define TOK_NONE        NULL
 
 #define RPL_LISTGAME    326
 #define RPL_LISTLOBBY   327
+#define RPL_BADPASS     378
 #define RPL_VERNONREQ   379
 
 #define SKU_RA303       0x00001500
@@ -161,6 +164,7 @@ DLLFUNC int MOD_INIT(m_wol)(ModuleInfo *modinfo)
     CommandAdd(modinfo->handle, MSG_SERIAL, TOK_NONE, wol_serial, MAXPARA, M_UNREGISTERED);
     CommandAdd(modinfo->handle, MSG_VERCHK, TOK_NONE, wol_verchk, MAXPARA, M_UNREGISTERED);
     CommandAdd(modinfo->handle, MSG_JOINGAME, TOK_NONE, wol_joingame, MAXPARA, M_USER);
+    CommandAdd(modinfo->handle, MSG_USERIP, TOK_NONE, wol_userip, MAXPARA, M_USER);
     CommandAdd(modinfo->handle, MSG_GAMEOPT, TOK_NONE, wol_gameopt, MAXPARA, M_USER);
     CommandAdd(modinfo->handle, MSG_STARTG, TOK_NONE, wol_startg, MAXPARA, M_USER);
 
@@ -198,8 +202,11 @@ DLLFUNC int MOD_UNLOAD(m_wol)(int module_unload)
     /* disconnect all WOL users so they don't "ghost" around */
     WOL_LIST_FOREACH(users, user)
     {
-        user->p->flags |= FLAGS_KILLED;
-        exit_client(NULL, user->p, &me, "Killed by m_wol");
+        if (user->p)
+        {
+            user->p->flags |= FLAGS_KILLED;
+            exit_client(NULL, user->p, &me, "Killed by m_wol");
+        }
     }
 
     WOL_LIST_FREE(channels);
@@ -259,6 +266,29 @@ int wol_apgar(aClient *cptr, aClient *sptr, int parc, char *parv[])
     int i;
     for (i = 0; i < parc; i++)
         dprintf(" parv[%d]: \"%s\"", i, parv[i]);
+
+    if (parc < 3)
+    {
+        sendto_one(sptr, err_str(ERR_NEEDMOREPARAMS), me.name, parv[0], "APGAR");
+        return 0;
+    }
+
+    wol_user    *user       = wol_get_user(cptr);
+
+    if (strcmp(parv[1], "0aIraaaa")) /* password is "test" */
+    {
+        sendto_one(sptr, ":%s %d %s :Invalid password",
+                me.name,
+                RPL_BADPASS,
+                parv[0]);
+        cptr->flags |= FLAGS_KILLED;
+        if (user)
+        {
+            user->p = NULL;
+        }
+        exit_client(NULL, cptr, &me, "m_wol: Invalid password");
+    }
+
     return 0;
 }
 
@@ -268,6 +298,9 @@ int wol_serial(aClient *cptr, aClient *sptr, int parc, char *parv[])
     int i;
     for (i = 0; i < parc; i++)
         dprintf(" parv[%d]: \"%s\"", i, parv[i]);
+
+    /* we don't have a serial database so there is no point of checking it */
+
     return 0;
 }
 
@@ -503,6 +536,18 @@ int wol_joingame(aClient *cptr, aClient *sptr, int parc, char *parv[])
             wol_names(cptr, sptr, 2, parv);
         }
     }
+
+    return 0;
+}
+
+int wol_userip(aClient *cptr, aClient *sptr, int parc, char *parv[])
+{
+    dprintf("wol_userip(cptr=%p, sptr=%p, parc=%d, parv=%p)", cptr, sptr, parc, parv);
+    int i;
+    for (i = 0; i < parc; i++)
+        dprintf(" parv[%d]: \"%s\"", i, parv[i]);
+
+    /* I don't think this needs to be implemented at all */
 
     return 0;
 }
